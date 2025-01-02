@@ -33,7 +33,7 @@
 //----------------------------------------------------------------------------------------
 const int   MaxItemsDatabase = 2000;
 const int   MinHeightFace    = 90;
-const float MinFaceThreshold = 0.50;
+const float MinFaceThreshold = 0.25;
 const float FaceLiving       = 0.93;
 const double MaxBlur         = -25.0;   //more positive = sharper image
 const double MaxAngle        = 10.0;
@@ -139,6 +139,9 @@ int main(int argc, char **argv)
     cv::Mat faces;
     std::vector<FaceObject> Faces;
     vector<cv::Mat> fc1;
+    //vector<cv::Mat> faceImgs;
+    vector<bool> faceSeen;
+    vector<vector<bool>> faceSeenHist;
     string pattern_jpg = "./img/*.jpg";
     cv::String NewItemName;
     size_t FaceCnt;
@@ -236,6 +239,9 @@ int main(int argc, char **argv)
         for(i=0; i<FaceCnt; i++){
             //convert to landmark vector and store into fc
             faces = cv::imread(NameFaces[i]);
+            //faceImgs.push_back(faces);
+            faceSeen.push_back(false);
+            faceSeenHist.push_back(vector<bool>(16, false));
             fc1.push_back(ArcFace.GetFeature(faces));
             //get a proper name
             string Str = NameFaces[i];
@@ -281,6 +287,10 @@ int main(int argc, char **argv)
 #endif // RETINA
 
 #ifdef RECOGNIZE_FACE
+        for (int i = 0; i < FaceCnt; i++) {
+            faceSeenHist[i].insert(faceSeenHist[i].begin(), false);
+            faceSeenHist[i].pop_back();
+}
         //reset indicators
         for(i=0;i<Faces.size();i++){
             Faces[i].NameIndex = -2;    //-2 -> too tiny (may be negative to signal the drawing)
@@ -310,6 +320,7 @@ int main(int argc, char **argv)
                         for(size_t c=0;c<FaceCnt;c++) score_.push_back(CosineDistance(fc1[c], fc2));
                         int Pmax = max_element(score_.begin(),score_.end()) - score_.begin();
                         Faces[i].NameIndex = Pmax;
+                        faceSeenHist[Pmax][0] = true;
                         Faces[i].NameProb  = score_[Pmax];
                         score_.clear();
                         if(Faces[i].NameProb >= MinFaceThreshold){
@@ -386,6 +397,21 @@ int main(int argc, char **argv)
         if(f>0.0) FPS[((Fcnt++)&0x0F)]=1000.0/f;
         for(f=0.0, i=0;i<16;i++){ f+=FPS[i]; }
         cv::putText(frame, cv::format("FPS %0.2f", f/16),cv::Point(10,20),cv::FONT_HERSHEY_SIMPLEX,0.6, cv::Scalar(180, 180, 0));
+
+        //make white copy of frame
+        cv::Mat white = cv::Mat::ones(frame.size(), CV_8UC3);
+
+        //Write each NameFace and FaceSeen to the frame
+        for (size_t i = 0; i < NameFaces.size(); i++) {
+            if (std::all_of(faceSeenHist[i].begin(), faceSeenHist[i].end(), [](bool v) { return v; })) {
+                faceSeen[i] = true;
+            }
+            cv::Scalar textColor = faceSeen[i] ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);
+            cv::putText(white, NameFaces[i], cv::Point(10, 20 * (i + 2)), cv::FONT_HERSHEY_SIMPLEX, 0.6, textColor);
+        }
+
+        //stitch the frame and white copy together
+        cv::hconcat(frame, white, frame);
 
         //show output
         cv::imshow("RPi 64 OS - 1,95 GHz - 2 Mb RAM", frame);
